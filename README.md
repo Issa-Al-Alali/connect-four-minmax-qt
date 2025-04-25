@@ -16,7 +16,7 @@ This project is an implementation of the classic Connect Four game in C++ using 
 * **AI Algorithm:** Minimax
 
 ## Setup & Installation
-1.  Create a Qt Widgets Application and conpy then paste the main.cpp
+1.  Create a Qt Widgets Application and copy then paste the main.cpp
 2.  Ensure you have a compatible C++ compiler (like g++ or Clang) and the Qt development libraries installed.
 
 ## How to Play
