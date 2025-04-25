@@ -28,7 +28,7 @@ This project is an implementation of the classic Connect Four game in C++ using 
 
 ## Contributors
 * Issa Al Alali / Issa-Al-Alali
-* Georges Sayde / george618
+* Georges Sayde / georges618
 * Hassan Moaullem / Hassan-ha
 
 ## License
