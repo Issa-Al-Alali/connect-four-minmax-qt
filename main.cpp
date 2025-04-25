@@ -7,287 +7,498 @@
 #include <QMessageBox>
 #include <vector>
 #include <limits>
+#include <string>
+#include <QDebug>
+#include <QPainter> // Required for drawing
+#include <QPixmap>  // Required for drawing on labels
+#include <QColor>   // Required for colors
 
 using namespace std;
 
-// Define the players
-const char PLAYER_X = 'X';
-const char PLAYER_O = 'O';
+// Define board dimensions
+const int ROWS = 6;
+const int COLS = 7;
+
+// Define players
+const char PLAYER_YELLOW = 'Y'; // Human player
+const char PLAYER_RED = 'R';     // AI player
 const char EMPTY = ' ';
 
-// Structure to represent a move
+// Structure to represent a move (just the column)
 struct Move {
-    int row, col;
+    int col;
 };
 
-// Function to check if there are any moves left on the board
-bool isMovesLeft(const vector<vector<char>>& board) {
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            if (board[i][j] == EMPTY) {
+// --- Connect Four Game Logic ---
+
+// Basic board representation
+using Connect4Board = vector<vector<char>>;
+
+// Function to initialize an empty board
+Connect4Board initializeBoard() {
+    return Connect4Board(ROWS, vector<char>(COLS, EMPTY));
+}
+
+// Function to check if a column is valid and not full
+bool isValidLocation(const Connect4Board& board, int col) {
+    return col >= 0 && col < COLS && board[0][col] == EMPTY;
+}
+
+// Function to drop a piece into a column
+// Returns the row where the piece landed, or -1 if the move was invalid
+int dropPiece(Connect4Board& board, int col, char piece) {
+    if (!isValidLocation(board, col)) {
+        return -1; // Invalid move
+    }
+    for (int r = ROWS - 1; r >= 0; --r) {
+        if (board[r][col] == EMPTY) {
+            board[r][col] = piece;
+            return r; // Return the row where the piece landed
+        }
+    }
+    return -1; // Should not reach here if isValidLocation is checked
+}
+
+// Function to check for a win
+bool checkWin(const Connect4Board& board, char piece) {
+    // Check horizontal
+    for (int r = 0; r < ROWS; ++r) {
+        for (int c = 0; c <= COLS - 4; ++c) {
+            if (board[r][c] == piece && board[r][c + 1] == piece && board[r][c + 2] == piece && board[r][c + 3] == piece) {
                 return true;
             }
         }
     }
+
+    // Check vertical
+    for (int c = 0; c < COLS; ++c) {
+        for (int r = 0; r <= ROWS - 4; ++r) {
+            if (board[r][c] == piece && board[r + 1][c] == piece && board[r + 2][c] == piece && board[r + 3][c] == piece) {
+                return true;
+            }
+        }
+    }
+
+    // Check positive diagonal
+    for (int r = 0; r <= ROWS - 4; ++r) {
+        for (int c = 0; c <= COLS - 4; ++c) {
+            if (board[r][c] == piece && board[r + 1][c + 1] == piece && board[r + 2][c + 2] == piece && board[r + 3][c + 3] == piece) {
+                return true;
+            }
+        }
+    }
+
+    // Check negative diagonal
+    for (int r = 3; r < ROWS; ++r) {
+        for (int c = 0; c <= COLS - 4; ++c) {
+            if (board[r][c] == piece && board[r - 1][c + 1] == piece && board[r - 2][c + 2] == piece && board[r - 3][c + 3] == piece) {
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
-// Function to evaluate the board state
-// Returns +10 if PLAYER_X wins, -10 if PLAYER_O wins, 0 otherwise
-int evaluate(const vector<vector<char>>& board) {
-    // Check rows for win
-    for (int row = 0; row < 3; ++row) {
-        if (board[row][0] == board[row][1] && board[row][1] == board[row][2]) {
-            if (board[row][0] == PLAYER_X) return +10;
-            else if (board[row][0] == PLAYER_O) return -10;
+// Function to check for a tie
+bool checkTie(const Connect4Board& board) {
+    for (int c = 0; c < COLS; ++c) {
+        if (board[0][c] == EMPTY) {
+            return false; // Board is not full
         }
     }
-
-    // Check columns for win
-    for (int col = 0; col < 3; ++col) {
-        if (board[0][col] == board[1][col] && board[1][col] == board[2][col]) {
-            if (board[0][col] == PLAYER_X) return +10;
-            else if (board[0][col] == PLAYER_O) return -10;
-        }
-    }
-
-    // Check diagonals for win
-    if (board[0][0] == board[1][1] && board[1][1] == board[2][2]) {
-        if (board[0][0] == PLAYER_X) return +10;
-        else if (board[0][0] == PLAYER_O) return -10;
-    }
-    if (board[0][2] == board[1][1] && board[1][1] == board[2][0]) {
-        if (board[0][2] == PLAYER_X) return +10;
-        else if (board[0][2] == PLAYER_O) return -10;
-    }
-
-    // If no winner, return 0
-    return 0;
+    return true; // Board is full and no winner
 }
+
+// Simplified evaluation function for Connect Four
+// Evaluates the board state based on potential winning lines
+int evaluateBoard(const Connect4Board& board) {
+    int score = 0;
+
+    // Simple evaluation: count 2-in-a-rows and 3-in-a-rows for each player
+    // More sophisticated evaluation would consider blocking, threats, etc.
+
+    // Evaluate for AI (Red)
+    for (int r = 0; r < ROWS; ++r) {
+        for (int c = 0; c <= COLS - 4; ++c) {
+            int redCount = 0;
+            int emptyCount = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (board[r][c + i] == PLAYER_RED) redCount++;
+                else if (board[r][c + i] == EMPTY) emptyCount++;
+            }
+            if (redCount == 3 && emptyCount == 1) score += 5;
+            else if (redCount == 2 && emptyCount == 2) score += 2;
+        }
+    }
+
+    for (int c = 0; c < COLS; ++c) {
+        for (int r = 0; r <= ROWS - 4; ++r) {
+            int redCount = 0;
+            int emptyCount = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (board[r + i][c] == PLAYER_RED) redCount++;
+                else if (board[r + i][c] == EMPTY) emptyCount++;
+            }
+            if (redCount == 3 && emptyCount == 1) score += 5;
+            else if (redCount == 2 && emptyCount == 2) score += 2;
+        }
+    }
+
+    for (int r = 0; r <= ROWS - 4; ++r) {
+        for (int c = 0; c <= COLS - 4; ++c) {
+            int redCount = 0;
+            int emptyCount = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (board[r + i][c + i] == PLAYER_RED) redCount++;
+                else if (board[r + i][c + i] == EMPTY) emptyCount++;
+            }
+            if (redCount == 3 && emptyCount == 1) score += 5;
+            else if (redCount == 2 && emptyCount == 2) score += 2;
+        }
+    }
+
+    for (int r = 3; r < ROWS; ++r) {
+        for (int c = 0; c <= COLS - 4; ++c) {
+            int redCount = 0;
+            int emptyCount = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (board[r - i][c + i] == PLAYER_RED) redCount++;
+                else if (board[r - i][c + i] == EMPTY) emptyCount++;
+            }
+            if (redCount == 3 && emptyCount == 1) score += 5;
+            else if (redCount == 2 && emptyCount == 2) score += 2;
+        }
+    }
+
+
+    // Evaluate for Human (Yellow) - Penalize AI for human opportunities
+    for (int r = 0; r < ROWS; ++r) {
+        for (int c = 0; c <= COLS - 4; ++c) {
+            int yellowCount = 0;
+            int emptyCount = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (board[r][c + i] == PLAYER_YELLOW) yellowCount++;
+                else if (board[r][c + i] == EMPTY) emptyCount++;
+            }
+            if (yellowCount == 3 && emptyCount == 1) score -= 4; // Block human win
+            else if (yellowCount == 2 && emptyCount == 2) score -= 1;
+        }
+    }
+
+    for (int c = 0; c < COLS; ++c) {
+        for (int r = 0; r <= ROWS - 4; ++r) {
+            int yellowCount = 0;
+            int emptyCount = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (board[r + i][c] == PLAYER_YELLOW) yellowCount++;
+                else if (board[r + i][c] == EMPTY) emptyCount++;
+            }
+            if (yellowCount == 3 && emptyCount == 1) score -= 4; // Block human win
+            else if (yellowCount == 2 && emptyCount == 2) score -= 1;
+        }
+    }
+
+    for (int r = 0; r <= ROWS - 4; ++r) {
+        for (int c = 0; c <= COLS - 4; ++c) {
+            int yellowCount = 0;
+            int emptyCount = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (board[r + i][c + i] == PLAYER_YELLOW) yellowCount++;
+                else if (board[r + i][c + i] == EMPTY) emptyCount++;
+            }
+            if (yellowCount == 3 && emptyCount == 1) score -= 4; // Block human win
+            else if (yellowCount == 2 && emptyCount == 2) score -= 1;
+        }
+    }
+
+    for (int r = 3; r < ROWS; ++r) {
+        for (int c = 0; c <= COLS - 4; ++c) {
+            int yellowCount = 0;
+            int emptyCount = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (board[r - i][c + i] == PLAYER_YELLOW) yellowCount++;
+                else if (board[r - i][c + i] == EMPTY) emptyCount++;
+            }
+            if (yellowCount == 3 && emptyCount == 1) score -= 4; // Block human win
+            else if (yellowCount == 2 && emptyCount == 2) score -= 1;
+        }
+    }
+
+
+    return score;
+}
+
 
 // The MiniMax algorithm function
-// isMaximizingPlayer is true if it's the maximizing player's turn (AI - PLAYER_X)
-int minimax(vector<vector<char>>& board, int depth, bool isMaximizingPlayer) {
-    int score = evaluate(board);
+// isMaximizingPlayer is true if it's the maximizing player's turn (AI - Red)
+int minimax(Connect4Board& board, int depth, int maxDepth, bool isMaximizingPlayer) {
+    // Check for terminal states
+    if (checkWin(board, PLAYER_RED)) return 1000 - depth; // AI wins (higher score for shorter game)
+    if (checkWin(board, PLAYER_YELLOW)) return -1000 + depth; // Human wins (lower score for shorter game)
+    if (checkTie(board)) return 0; // Tie
 
-    // If Maximizer has won the game return his evaluated score
-    if (score == 10) return score;
+    // Base case: If max depth is reached
+    if (depth == maxDepth) {
+        return evaluateBoard(board);
+    }
 
-    // If Minimizer has won the game return his evaluated score
-    if (score == -10) return score;
+    if (isMaximizingPlayer) { // AI's turn (Red)
+        int best = numeric_limits<int>::min();
 
-    // If there are no more moves and no winner then it's a tie
-    if (isMovesLeft(board) == false) return 0;
+        // Iterate over possible columns to drop a piece
+        for (int col = 0; col < COLS; ++col) {
+            if (isValidLocation(board, col)) {
+                // Make the move
+                Connect4Board tempBoard = board; // Create a temporary board
+                dropPiece(tempBoard, col, PLAYER_RED);
 
-    // If this maximizer's move
-    if (isMaximizingPlayer) {
-        int best = numeric_limits<int>::min(); // Initialize best score to negative infinity
-
-        // Traverse all cells
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                // Check if cell is empty
-                if (board[i][j] == EMPTY) {
-                    // Make the move
-                    board[i][j] = PLAYER_X;
-
-                    // Call minimax recursively and choose the maximum value
-                    best = max(best, minimax(board, depth + 1, !isMaximizingPlayer));
-
-                    // Undo the move
-                    board[i][j] = EMPTY;
-                }
+                // Recurse
+                best = max(best, minimax(tempBoard, depth + 1, maxDepth, false));
             }
         }
         return best;
     }
-    // If this minimizer's move
-    else {
-        int best = numeric_limits<int>::max(); // Initialize best score to positive infinity
+    else { // Human's turn (Yellow)
+        int best = numeric_limits<int>::max();
 
-        // Traverse all cells
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                // Check if cell is empty
-                if (board[i][j] == EMPTY) {
-                    // Make the move
-                    board[i][j] = PLAYER_O;
+        // Iterate over possible columns to drop a piece
+        for (int col = 0; col < COLS; ++col) {
+            if (isValidLocation(board, col)) {
+                // Make the move
+                Connect4Board tempBoard = board; // Create a temporary board
+                dropPiece(tempBoard, col, PLAYER_YELLOW);
 
-                    // Call minimax recursively and choose the minimum value
-                    best = min(best, minimax(board, depth + 1, !isMaximizingPlayer));
-
-                    // Undo the move
-                    board[i][j] = EMPTY;
-                }
+                // Recurse
+                best = min(best, minimax(tempBoard, depth + 1, maxDepth, true));
             }
         }
         return best;
     }
 }
 
-// This will return the best possible move for the player
-Move findBestMove(vector<vector<char>>& board) {
-    int bestVal = numeric_limits<int>::min(); // Initialize best value to negative infinity
-    Move bestMove;
-    bestMove.row = -1;
-    bestMove.col = -1;
+// Function to find the best move for the AI using MiniMax
+Move findBestMove(Connect4Board& board, int maxDepth) {
+    int bestVal = numeric_limits<int>::min();
+    Move bestMove = { -1 }; // Indicate no valid move found yet
 
-    // Traverse all cells, evaluate minimax function for all empty cells.
-    // And return the cell with optimal value.
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            // Check if cell is empty
-            if (board[i][j] == EMPTY) {
-                // Make the move
-                board[i][j] = PLAYER_X;
+    // Iterate over possible columns
+    for (int col = 0; col < COLS; ++col) {
+        if (isValidLocation(board, col)) {
+            // Make the move on a temporary board
+            Connect4Board tempBoard = board;
+            dropPiece(tempBoard, col, PLAYER_RED);
 
-                // compute evaluation function for this move.
-                int moveVal = minimax(board, 0, false);
+            // Compute evaluation function for this move.
+            // After AI moves, it's Human's turn (minimizing)
+            int moveVal = minimax(tempBoard, 0, maxDepth, false);
 
-                // Undo the move
-                board[i][j] = EMPTY;
-
-                // If the value of the current move is more than the best value, then update best
-                if (moveVal > bestVal) {
-                    bestMove.row = i;
-                    bestMove.col = j;
-                    bestVal = moveVal;
-                }
+            // If the value of the current move is more than the best value, then update best
+            if (moveVal > bestVal) {
+                bestVal = moveVal;
+                bestMove = { col };
             }
         }
     }
-
+    qDebug() << "Best AI move column:" << bestMove.col << "with value" << bestVal;
     return bestMove;
 }
 
+
 // --- Qt GUI Implementation ---
 
-class TicTacToeWindow : public QMainWindow {
-    Q_OBJECT
+class Connect4Window : public QMainWindow {
+    Q_OBJECT // Add this macro
 
 public:
-    TicTacToeWindow(QWidget* parent = nullptr) : QMainWindow(parent) {
-        // Set up the main window
-        setWindowTitle("Tic-Tac-Toe with MiniMax");
-        setFixedSize(300, 350); // Set a fixed size for simplicity
+    Connect4Window(QWidget* parent = nullptr) : QMainWindow(parent) {
+        setWindowTitle("Connect Four with MiniMax");
+        setFixedSize(COLS * 80, ROWS * 80 + 50); // Adjust size for 6x7 board + status label
 
-        // Create the central widget and layout
         QWidget* centralWidget = new QWidget(this);
         QGridLayout* gridLayout = new QGridLayout(centralWidget);
         centralWidget->setLayout(gridLayout);
         setCentralWidget(centralWidget);
 
-        // Create the game board buttons
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                QPushButton* button = new QPushButton("", centralWidget);
-                button->setFixedSize(80, 80); // Fixed size for buttons
-                button->setFont(QFont("Arial", 30)); // Set font size for X/O
-                gridLayout->addWidget(button, i, j);
-                boardButtons[i][j] = button;
+        // Create the board buttons (representing columns to drop into)
+        for (int c = 0; c < COLS; ++c) {
+            QPushButton* button = new QPushButton("Drop", centralWidget);
+            button->setFixedSize(80, 50); // Button size for dropping
+            button->setFont(QFont("Arial", 12));
+            gridLayout->addWidget(button, 0, c); // Place drop buttons in the top row
 
-                // Connect button click to the handleButtonClick slot
-                connect(button, &QPushButton::clicked, this, [=]() {
-                    handleButtonClick(i, j);
-                    });
+            // Connect button click to the handleColumnClick slot
+            connect(button, &QPushButton::clicked, this, [=]() {
+                handleColumnClick(c);
+                });
+            columnButtons[c] = button; // Store column buttons
+        }
 
-                // Initialize the board state
-                gameBoard[i][j] = EMPTY;
+        // Create labels to represent the board squares
+        for (int r = 0; r < ROWS; ++r) {
+            for (int c = 0; c < COLS; ++c) {
+                QLabel* label = new QLabel("", centralWidget);
+                label->setFixedSize(80, 80); // Size for board squares
+                label->setStyleSheet("background-color: lightblue; border: 1px solid black;"); // Basic styling
+                label->setAlignment(Qt::AlignCenter);
+                // No font size needed as we will draw circles
+                gridLayout->addWidget(label, r + 1, c); // Place board labels below drop buttons
+                boardLabels[r][c] = label; // Store board labels
             }
         }
 
-        // Create a status label
-        statusLabel = new QLabel("Your turn (O)", centralWidget);
-        statusLabel->setAlignment(Qt::AlignCenter);
-        statusLabel->setFont(QFont("Arial", 14));
-        gridLayout->addWidget(statusLabel, 3, 0, 1, 3); // Span across all columns
 
-        // Player O starts
-        currentPlayer = PLAYER_O;
+        // Status label
+        statusLabel = new QLabel("Your turn (Yellow)", centralWidget); // Human starts as Yellow
+        statusLabel->setAlignment(Qt::AlignCenter);
+        statusLabel->setFont(QFont("Arial", 16));
+        gridLayout->addWidget(statusLabel, ROWS + 1, 0, 1, COLS); // Span across all columns
+
+        // Initialize game state
+        gameBoard = initializeBoard();
+        currentPlayer = PLAYER_YELLOW; // Human (Yellow) starts
+        aiSearchDepth = 5; // Set a shallow search depth for simplicity/speed
+
+        updateBoardUI(); // Update the UI to show the initial board
     }
 
 private slots:
-    // Slot to handle button clicks
-    void handleButtonClick(int row, int col) {
-        // Only process if the cell is empty and it's the player's turn
-        if (gameBoard[row][col] == EMPTY && currentPlayer == PLAYER_O) {
-            // Make the player's move
-            gameBoard[row][col] = PLAYER_O;
-            boardButtons[row][col]->setText(QString(PLAYER_O));
-            boardButtons[row][col]->setEnabled(false); // Disable the button after move
+    // Slot to handle column button clicks
+    void handleColumnClick(int col) {
+        // Only process if it's the human player's turn (Yellow) and the column is valid
+        if (currentPlayer != PLAYER_YELLOW || !isValidLocation(gameBoard, col)) {
+            QMessageBox::warning(this, "Invalid Move", "Cannot drop here.");
+            return;
+        }
 
-            // Check for game end
-            if (checkGameEnd()) {
-                return; // Game is over
-            }
+        // Drop the human player's piece
+        int row = dropPiece(gameBoard, col, PLAYER_YELLOW);
+        updateBoardUI(); // Update the UI
 
-            // Switch to AI's turn
-            currentPlayer = PLAYER_X;
-            statusLabel->setText("AI's turn (X)");
+        // Check for game end after human move
+        if (checkGameEnd()) {
+            return; // Game is over
+        }
 
-            // Trigger AI's move
-            QApplication::processEvents(); // Process events to update GUI before AI move
-            makeAIMove();
+        // Switch to AI's turn
+        currentPlayer = PLAYER_RED;
+        statusLabel->setText("AI's turn (Red)");
 
-            // Check for game end after AI's move
-            checkGameEnd();
+        // Trigger AI's move
+        QApplication::processEvents(); // Update UI before AI thinks
+        makeAIMove();
+        updateBoardUI();
 
-            // Switch back to player's turn if game is not over
-            if (evaluate(gameBoard) == 0 && isMovesLeft(gameBoard)) {
-                currentPlayer = PLAYER_O;
-                statusLabel->setText("Your turn (O)");
-            }
+        // Check for game end after AI move
+        if (!checkGameEnd()) {
+            // Switch back to human's turn if game is not over
+            currentPlayer = PLAYER_YELLOW;
+            statusLabel->setText("Your turn (Yellow)");
         }
     }
 
-    // Function to make the AI's move
-    void makeAIMove() {
-        Move aiMove = findBestMove(gameBoard);
+    // Function to update the board UI based on the gameBoard state
+    void updateBoardUI() {
+        for (int r = 0; r < ROWS; ++r) {
+            for (int c = 0; c < COLS; ++c) {
+                QPixmap pixmap(boardLabels[r][c]->size());
+                pixmap.fill(QColor(173, 216, 230)); // Light blue background for the board square
 
-        // Make the AI's move
-        gameBoard[aiMove.row][aiMove.col] = PLAYER_X;
-        boardButtons[aiMove.row][aiMove.col]->setText(QString(PLAYER_X));
-        boardButtons[aiMove.row][aiMove.col]->setEnabled(false); // Disable the button
+                QPainter painter(&pixmap);
+                painter.setRenderHint(QPainter::Antialiasing); // For smoother circles
+
+                if (gameBoard[r][c] == PLAYER_YELLOW) {
+                    painter.setBrush(QBrush(Qt::yellow));
+                    painter.setPen(Qt::NoPen); // No border for the circle
+                    // Draw a circle slightly smaller than the label to have some padding
+                    int circleSize = min(boardLabels[r][c]->width(), boardLabels[r][c]->height()) * 0.8;
+                    int x = (boardLabels[r][c]->width() - circleSize) / 2;
+                    int y = (boardLabels[r][c]->height() - circleSize) / 2;
+                    painter.drawEllipse(x, y, circleSize, circleSize);
+                }
+                else if (gameBoard[r][c] == PLAYER_RED) {
+                    painter.setBrush(QBrush(Qt::red));
+                    painter.setPen(Qt::NoPen); // No border for the circle
+                    int circleSize = min(boardLabels[r][c]->width(), boardLabels[r][c]->height()) * 0.8;
+                    int x = (boardLabels[r][c]->width() - circleSize) / 2;
+                    int y = (boardLabels[r][c]->height() - circleSize) / 2;
+                    painter.drawEllipse(x, y, circleSize, circleSize);
+                }
+
+                painter.end(); // End painting
+
+                boardLabels[r][c]->setPixmap(pixmap); // Set the pixmap to the label
+                boardLabels[r][c]->setText(""); // Ensure no text is displayed
+            }
+        }
+        // Update the state of column buttons (disable if full)
+        for (int c = 0; c < COLS; ++c) {
+            columnButtons[c]->setEnabled(isValidLocation(gameBoard, c));
+        }
+    }
+
+    // Function to make the AI's move using MiniMax
+    void makeAIMove() {
+        statusLabel->setText("AI's turn (Red) - Thinking...");
+        QApplication::processEvents(); // Update status label
+        qDebug() << "AI thinking...";
+
+        Move aiMove = findBestMove(gameBoard, aiSearchDepth);
+
+        if (aiMove.col != -1) { // Check if a valid move was found
+            dropPiece(gameBoard, aiMove.col, PLAYER_RED);
+            qDebug() << "AI made move in column:" << aiMove.col;
+        }
+        else {
+            // No valid move found for AI (shouldn't happen in a normal game unless game over)
+            statusLabel->setText("AI has no legal moves.");
+            qDebug() << "AI found no legal moves.";
+        }
     }
 
     // Function to check if the game has ended
     bool checkGameEnd() {
-        int score = evaluate(gameBoard);
-        if (score == 10) {
-            statusLabel->setText("AI Wins!");
-            disableAllButtons();
-            QMessageBox::information(this, "Game Over", "AI Wins!");
-            return true;
-        }
-        else if (score == -10) {
+        if (checkWin(gameBoard, PLAYER_YELLOW)) {
             statusLabel->setText("You Win!");
             disableAllButtons();
             QMessageBox::information(this, "Game Over", "You Win!");
+            currentPlayer = EMPTY; // Indicate game over
+            qDebug() << "Game Over: Human Wins!";
             return true;
         }
-        else if (!isMovesLeft(gameBoard)) {
+        else if (checkWin(gameBoard, PLAYER_RED)) {
+            statusLabel->setText("AI Wins!");
+            disableAllButtons();
+            QMessageBox::information(this, "Game Over", "AI Wins!");
+            currentPlayer = EMPTY; // Indicate game over
+            qDebug() << "Game Over: AI Wins!";
+            return true;
+        }
+        else if (checkTie(gameBoard)) {
             statusLabel->setText("It's a Tie!");
             disableAllButtons();
             QMessageBox::information(this, "Game Over", "It's a Tie!");
+            currentPlayer = EMPTY; // Indicate game over
+            qDebug() << "Game Over: Tie!";
             return true;
         }
         return false;
     }
 
-    // Function to disable all buttons after the game ends
+    // Function to disable all column buttons after the game ends
     void disableAllButtons() {
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                boardButtons[i][j]->setEnabled(false);
-            }
+        for (int c = 0; c < COLS; ++c) {
+            columnButtons[c]->setEnabled(false);
         }
     }
 
 
 private:
-    QPushButton* boardButtons[3][3]; // 2D array of buttons
-    vector<vector<char>> gameBoard = vector<vector<char>>(3, vector<char>(3, EMPTY)); // Game board state
-    char currentPlayer; // 'X' or 'O'
+    QPushButton* columnButtons[COLS]; // Buttons for dropping pieces
+    QLabel* boardLabels[ROWS][COLS]; // Labels to represent board squares
+    Connect4Board gameBoard; // Game board state
+    char currentPlayer; // 'Y' or 'R'
+    int aiSearchDepth; // Depth for MiniMax search
     QLabel* statusLabel; // Label to display game status
 };
 
@@ -295,7 +506,7 @@ private:
 
 int main(int argc, char* argv[]) {
     QApplication a(argc, argv);
-    TicTacToeWindow w;
+    Connect4Window w;
     w.show();
     return a.exec();
 }
